@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <title>MANSIONS FOR THE SOULS · Grid Sequencer · LEGOSU v4 (Pro)</title>
+  <style>
+    :root{
+      --bg0:#060a0a;--bg1:#0b1012;--cy:#20f1b7;--ink:#e9fff6;--muted:#7fe9cf;
+      --panel:rgba(0,0,0,.85); /* Slightly darker panel */
+      --ring:rgba(32,241,183,.4);
+      --sidebar-width: 220px; /* Desktop Sidebar Width */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:radial-gradient(140% 120% at 50% 0%,var(--bg1) 0%,var(--bg0) 60%);
+      color:var(--ink);
+      font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      -webkit-font-smoothing:antialiased;
+      touch-action:manipulation;
+    }
+    canvas{position:fixed;inset:0;display:block}
+
+    /* Shared Styles */
+    .btn, .mode, .tool, select {
+      border-radius: 10px;
+      white-space: nowrap;
+      transition: all 0.2s ease-in-out;
+      cursor: pointer;
+    }
+    .btn[disabled], .tool[disabled] { opacity: .4; cursor: not-allowed; }
+    .btn:hover:not([disabled]), .mode:hover:not(.active), .tool:hover:not(.active) {
+      background: rgba(32, 241, 183, 0.1);
+    }
+    select{ border:1px solid var(--ring); background:var(--panel); color:var(--ink); padding:8px; width: 100%; }
+
+    /* Top Mode Toggle (Always Fixed Top Center) */
+    #modebar{
+      position:fixed;top:10px;left:50%;transform:translateX(-50%);
+      display:flex;gap:8px;z-index:20;
+    }
+    .mode{
+      border:1.5px solid var(--cy);
+      background:var(--panel);color:var(--cy);
+      padding:8px 12px;letter-spacing:.12em;
+    }
+    .mode.active{background:var(--cy);color:#001a12}
+
+    /* --- DESKTOP LAYOUT (Media Query for Large Screens) --- */
+    @media (min-width: 1024px) {
+      .sidebar {
+        position: fixed; top: 0; padding: 20px 15px; width: var(--sidebar-width);
+        height: 100vh; z-index: 10;
+        background: var(--panel); backdrop-filter: blur(8px);
+        display: flex; flex-direction: column; gap: 15px;
+        border-right: 1px solid var(--ring);
+      }
+      #controls-left { left: 0; }
+      #controls-right {
+        right: 0; left: auto; border-right: none; border-left: 1px solid var(--ring);
+      }
+      #main-actions, #annotation-tools-desktop { display: flex; flex-direction: column; gap: 12px; }
+
+      .tool-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .tool { height: 44px; display: grid; place-items: center; border: 1.5px solid var(--ring); color: var(--muted); background: rgba(0,0,0,.3); font-weight: 700; }
+      .tool.active{ border-color:var(--cy); color:#001a12; background:var(--cy); }
+
+      .btn-desktop { border:1px solid var(--ring); background:transparent; color:var(--ink); padding:12px 10px; }
+      .section-title { color: var(--cy); opacity: .7; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+      #annotate-mobile-bar, #dock-mobile { display: none; } /* Hide mobile controls */
+    }
+
+    /* --- MOBILE LAYOUT (Default: Less than 1024px) --- */
+    @media (max-width: 1023px) {
+      .sidebar { display: none; } /* Hide sidebars on mobile */
+
+      /* Sticky top bar for essential annotation tools */
+      #annotate-mobile-bar {
+        position: fixed; top: 55px; left: 0; right: 0;
+        display: flex; justify-content: center; align-items: center; gap: 4px;
+        padding: 6px 8px; z-index: 18;
+        background: var(--panel);
+        border-bottom: 1px solid var(--ring);
+      }
+      .tool { 
+        width: 34px; height: 34px; display: grid; place-items: center; 
+        border: 1.5px solid var(--ring); color: var(--muted); background: rgba(0,0,0,.3); 
+        font-weight: 700; flex-shrink: 0; font-size: 11px;
+      }
+      .tool.active{ border-color:var(--cy); color:#001a12; background:var(--cy); }
+      #highlight-mobile { 
+        flex-grow: 1; min-width: 100px; max-width: 140px; 
+        padding: 6px; font-size: 10px;
+        border-radius: 10px;
+      }
+
+      /* Sticky bottom dock for essential actions */
+      #dock-mobile {
+        position: fixed; bottom: 0; left: 0; right: 0;
+        display: flex; justify-content: space-around; gap: 4px;
+        padding: 10px 8px; z-index: 20;
+        background: var(--panel); border-top: 1px solid var(--ring);
+      }
+      .btn-mobile {
+        flex: 1; padding: 10px 6px; font-size: 11px;
+        border: 1px solid var(--ring); background: transparent; color: var(--ink);
+      }
+      
+      /* Hint position adjustment */
+      .badge { position: fixed; inset: auto auto 70px 8px; z-index: 19; }
+    }
+
+    /* Gate and Card */
+    #gate{
+      position:fixed;inset:0;display:grid;place-items:center;
+      background:rgba(0,0,0,.96);z-index:50;
+    }
+    .card{
+      border:1.5px solid var(--cy);background:var(--panel);
+      padding:24px 30px;border-radius:12px;text-align:center;
+      max-width:400px;
+      box-shadow:0 0 32px rgba(32,241,183,.35);
+    }
+    .card h1{margin:0 0 8px 0;letter-spacing:.22em;color:var(--cy);font-size:16px}
+    .card p{margin:6px 0;opacity:.85}
+    .badge{
+      position:absolute;inset:auto auto 8px 8px;
+      background:rgba(0,0,0,.55);border:1px solid var(--ring);
+      border-radius:8px;padding:2px 6px;color:var(--muted);
+    }
+
+    /* Inline editor panel */
+    #cell-editor{
+      position:fixed; left:50%; transform:translateX(-50%);
+      bottom: 15%; /* Higher on screen */
+      display:none; z-index:30;
+      background:var(--panel); border:1.5px solid var(--ring);
+      border-radius:12px; padding:10px; backdrop-filter:blur(6px);
+      min-width:320px; max-width: 90vw;
+    }
+    #cell-editor.show{display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center}
+    #cell-editor input[type=text]{
+      flex:1 1 180px; min-width:180px;
+      border:1px solid var(--ring); background:rgba(0,0,0,.35);
+      color:var(--ink); padding:8px; border-radius:10px;
+    }
+    #cell-editor .small{border:1px solid var(--ring); background:transparent; color:var(--ink); padding:6px 10px; border-radius:10px}
+    #cell-editor .title{width:100%; text-align:center; color:var(--muted); font-weight:700}
+    #cell-editor .role{border:1px solid var(--ring); background:var(--panel); color:var(--ink); padding:8px; border-radius:10px}
+  </style>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+  <div class="badge" id="hint">Upload → Segment → Annotate → Export</div>
+
+  <!-- 1. Top Mode Toggle (9x9 / 27x27) -->
+  <div id="modebar">
+    <button class="mode active" data-mode="grid">9×9</button>
+    <button class="mode" data-mode="cube">27×27</button>
+  </div>
+
+  <!-- 2. Left Sidebar (Main Actions - Desktop Only) -->
+  <div id="controls-left" class="sidebar">
+    <div class="section-title">Setup & Export</div>
+    <button class="btn btn-desktop" id="btn-upload">Upload Image</button>
+    <input id="file" type="file" accept="image/*" hidden>
+    <button class="btn btn-desktop" id="btn-seg" disabled>Segment Grid</button>
+    <hr style="border-color:var(--ring); margin: 0;">
+    <button class="btn btn-desktop" id="btn-export-grid" disabled>Export Full Grid (PNG)</button>
+    <button class="btn btn-desktop" id="btn-export-graph" disabled>Export Scene Graph (JSON)</button>
+    <hr style="border-color:var(--ring); margin: 0;">
+    <button class="btn btn-desktop" id="btn-reset">Reset</button>
+  </div>
+
+  <!-- 3. Right Sidebar (Annotation Tools - Desktop Only) -->
+  <div id="controls-right" class="sidebar">
+    <div class="section-title">Annotation Tools</div>
+    <label class="mode" style="display:flex;gap:6px;align-items:center; width:100%;">
+      <input id="show3" type="checkbox"/> Show 3×3 Groups
+    </label>
+    <div id="annotation-tools-desktop">
+      <div class="tool-group">
+        <button class="tool active" data-role="L">L</button>
+        <button class="tool" data-role="E">E</button>
+        <button class="tool" data-role="G">G</button>
+        <button class="tool" data-role="O">O</button>
+        <button class="tool" data-role="S">S</button>
+        <button class="tool" data-role="U">U</button>
+      </div>
+      <select id="highlight-desktop">
+        <option value="ALL">Highlight: ALL Roles</option>
+        <option value="L">Location (L)</option>
+        <option value="E">Entity (E)</option>
+        <option value="G">Goal (G)</option>
+        <option value="O">Obstacle (O)</option>
+        <option value="S">Shift (S)</option>
+        <option value="U">Solution (U)</option>
+      </select>
+      <button class="btn btn-desktop" id="toggle-annotate-desktop">Annotation Mode: ON</button>
+    </div>
+  </div>
+
+  <!-- 4. Mobile Annotation Bar (Always Visible at Top on Mobile) -->
+  <div id="annotate-mobile-bar">
+    <button class="tool" data-role="L">L</button>
+    <button class="tool" data-role="E">E</button>
+    <button class="tool" data-role="G">G</button>
+    <button class="tool" data-role="O">O</button>
+    <button class="tool" data-role="S">S</button>
+    <button class="tool" data-role="U">U</button>
+    <select id="highlight-mobile">
+      <option value="ALL">Highlight: ALL</option>
+      <option value="L">L</option><option value="E">E</option><option value="G">G</option>
+      <option value="O">O</option><option value="S">S</option><option value="U">U</option>
+    </select>
+  </div>
+
+  <!-- 5. Mobile Dock (Essential Buttons for Touch/Small Screens) -->
+  <div id="dock-mobile">
+    <button class="btn btn-mobile" id="btn-upload-mobile">Upload</button>
+    <button class="btn btn-mobile" id="btn-seg-mobile" disabled>Segment</button>
+    <button class="btn btn-mobile" id="btn-export-mobile" disabled>Export</button>
+    <button class="btn btn-mobile" id="btn-reset-mobile">Reset</button>
+  </div>
+
+  <!-- Inline editor for naming + typing a LEGOSU element -->
+  <div id="cell-editor">
+    <div class="title">Edit <span id="ce-id"></span></div>
+    <input id="ce-name" type="text" placeholder="Name (e.g., ‘Control Room Console’)" />
+    <select id="ce-role" class="role">
+      <option value="">Type…</option>
+      <option value="L">Location</option>
+      <option value="E">Entity</option>
+      <option value="G">Goal</option>
+      <option value="O">Obstacle</option>
+      <option value="S">Shift</option>
+      <option value="U">Solution</option>
+    </select>
+    <button class="small" id="ce-save">Save</button>
+    <button class="small" id="ce-cancel">Cancel</button>
+  </div>
+
+  <div id="gate">
+    <div class="card">
+      <h1>MANSIONS FOR THE SOULS</h1>
+      <p>9×9 / 27×27 image grid with per‑cell labels (L,E,G,O,S,U) and scene‑graph export (LEGOSU).</p>
+      <p style="opacity:.7">Tap ENTER to enable audio + haptics.</p>
+      <p><button class="mode" id="enter">ENTER</button></p>
+    </div>
+  </div>
+
+  <script>
+    // ===== Basic state
+    const cv = document.getElementById('cv');
+    const ctx = cv.getContext('2d', {willReadFrequently:true});
+    let DPR = Math.min(2, (window.devicePixelRatio||1));
+    let gridSize = 9; // 9 or 27
+    let show3x3 = false;
+    let annotate = true; // Start in annotate mode for better visibility
+    let role = 'L';
+    let highlight = 'ALL';
+    let hasImage=false, segmented=false, sourceImage=null;
+    let cells=[]; // {id,row,col,canvas,role,name,group,localRow,localCol,metrics}
+    let selectedIndex = -1;
+    let longPressTimer = null;
+    let lastTapTime = 0;
+
+    // --- DOM Elements ---
+    const toolBtnsDesktop = [...document.querySelectorAll('#annotation-tools-desktop .tool')];
+    // Updated selector to point to the new top mobile bar
+    const toolBtnsMobile = [...document.querySelectorAll('#annotate-mobile-bar .tool')];
+    const btnToggleAnnotateDesktop = document.getElementById('toggle-annotate-desktop');
+    // Removed annotateMobileDrawer definition
+    const highlightDesktop = document.getElementById('highlight-desktop');
+    const highlightMobile = document.getElementById('highlight-mobile');
+    const show3x3Checkbox = document.getElementById('show3');
+    const fileInput = document.getElementById('file');
+    const btnSeg = document.getElementById('btn-seg');
+    const btnGrid = document.getElementById('btn-export-grid');
+    const btnGraph = document.getElementById('btn-export-graph');
+
+    function resize(){
+      const w=innerWidth, h=innerHeight;
+      cv.width=w*DPR; cv.height=h*DPR;
+      cv.style.width=w+'px'; cv.style.height=h+'px';
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+      draw();
+    }
+    addEventListener('resize', resize,{passive:true});
+    resize();
+
+    // ===== Simple audio + haptic
+    const AC = new (window.AudioContext||window.webkitAudioContext)();
+    const master=AC.createGain();
+    master.gain.value=0.18; master.connect(AC.destination);
+
+    function ping(freq){
+      const now=AC.currentTime;
+      const o=AC.createOscillator(); o.type='sine'; o.frequency.value=freq;
+      const g=AC.createGain(); g.gain.value=0.0001;
+      o.connect(g); g.connect(master);
+      g.gain.exponentialRampToValueAtTime(0.2, now+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+0.25);
+      o.start(); o.stop(now+0.28);
+      try{navigator.vibrate&&navigator.vibrate(12);}catch(e){}
+    }
+
+    // ===== UI wiring
+    const modes=[...document.querySelectorAll('.mode[data-mode]')];
+    modes.forEach(b=>b.onclick=()=>{
+      modes.forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      gridSize=(b.dataset.mode==='grid'?9:27);
+      segmented=false; cells=[]; draw();
+      if(hasImage) btnSeg.disabled=false;
+    });
+
+    // --- Annotation Mode Toggle & Tool Selection ---
+    function updateAnnotateUI(){
+      const state = annotate ? 'ON' : 'OFF';
+      btnToggleAnnotateDesktop.textContent = `Annotation Mode: ${state}`;
+      btnToggleAnnotateDesktop.classList.toggle('active', annotate);
+    }
+    updateAnnotateUI(); // Initial state setup
+
+    function setTool(el, isMobile){
+      // Deactivate all tool buttons on both desktop and mobile lists
+      [...toolBtnsDesktop, ...toolBtnsMobile].forEach(x=>x.classList.remove('active'));
+      // Find and activate the corresponding role button in the other list
+      const targetRole = el.dataset.role;
+      if (targetRole) {
+        role = targetRole;
+        // Activate both desktop and mobile buttons for consistency
+        document.querySelector(`#annotation-tools-desktop .tool[data-role="${targetRole}"]`)?.classList.add('active');
+        document.querySelector(`#annotate-mobile-bar .tool[data-role="${targetRole}"]`)?.classList.add('active'); // Updated selector
+      }
+    }
+
+    // Set up tool button listeners (Desktop and Mobile)
+    [...toolBtnsDesktop, ...toolBtnsMobile].forEach(el => el.onclick = () => setTool(el, el.closest('#annotate-mobile-bar') !== null));
+
+    // Toggle Annotate Mode (Desktop)
+    btnToggleAnnotateDesktop.onclick = () => {
+      annotate=!annotate;
+      updateAnnotateUI();
+    };
+
+    // Initial tool selection (L should be active)
+    setTool(document.querySelector('.tool[data-role="L"]'));
+
+    // Highlight filter listeners (Desktop and Mobile)
+    highlightDesktop.onchange=e=>{highlight=e.target.value; highlightMobile.value = e.target.value; draw();};
+    highlightMobile.onchange=e=>{highlight=e.target.value; highlightDesktop.value = e.target.value; draw();};
+
+    // Show 3x3 listener
+    show3x3Checkbox.onchange=e=>{show3x3=e.target.checked; draw();};
+
+    // --- Main Action Listeners ---
+    const btnUpload = document.getElementById('btn-upload');
+    const btnSegMobile = document.getElementById('btn-seg-mobile');
+
+    // Upload via Desktop sidebar or Mobile dock
+    btnUpload.onclick = document.getElementById('btn-upload-mobile').onclick = () => fileInput.click();
+
+    fileInput.onchange=(e)=>{
+      const f=e.target.files[0];
+      if(!f) return;
+      const img=new Image();
+      img.onload=()=>{
+        sourceImage=img; hasImage=true; segmented=false; cells=[];
+        btnSeg.disabled=false; btnSegMobile.disabled=false; draw();
+      };
+      img.src=URL.createObjectURL(f);
+    };
+
+    document.getElementById('enter').onclick=async()=>{
+      try{
+        await AC.resume();
+        document.getElementById('gate').style.display='none';
+      }catch(e){}
+    };
+
+    const btnSegDesktop = document.getElementById('btn-seg');
+    btnSegDesktop.onclick = btnSegMobile.onclick = ()=>{ if(!hasImage) return; segment(); };
+
+    // Export listeners
+    document.getElementById('btn-export-grid').onclick = document.getElementById('btn-export-mobile').onclick = () => exportFullGrid();
+    document.getElementById('btn-export-graph').onclick = () => exportGraph();
+
+    // Reset listeners
+    document.getElementById('btn-reset').onclick = document.getElementById('btn-reset-mobile').onclick = ()=>{
+      hasImage=false; segmented=false; sourceImage=null; cells=[]; draw();
+      btnSegDesktop.disabled=true; btnGrid.disabled=true; btnGraph.disabled=true;
+      btnSegMobile.disabled=true; document.getElementById('btn-export-mobile').disabled=true;
+    };
+
+    // --- Editor controls ---
+    const ed = document.getElementById('cell-editor');
+    const ceId = document.getElementById('ce-id');
+    const ceName = document.getElementById('ce-name');
+    const ceRole = document.getElementById('ce-role');
+
+    function openEditor(i){
+      const cell=cells[i]; if(!cell) return;
+      ceId.textContent = cell.id;
+      ceName.value = cell.name || '';
+      ceRole.value = cell.role || '';
+      ed.classList.add('show');
+      setTimeout(()=>ceName.focus(), 50);
+    }
+
+    function closeEditor(){
+      ed.classList.remove('show');
+      selectedIndex = -1;
+      document.activeElement.blur();
+    }
+
+    document.getElementById('ce-save').onclick = () => {
+      if (selectedIndex < 0) return;
+      const cell = cells[selectedIndex];
+      cell.name = ceName.value.trim();
+      if (ceRole.value !== undefined) cell.role = ceRole.value;
+      ping(520);
+      closeEditor();
+      draw();
+    };
+
+    document.getElementById('ce-cancel').onclick = () => closeEditor();
+
+    // ===== Segmentation
+    function segment(){
+      const size=Math.min(sourceImage.width, sourceImage.height);
+      const sx=(sourceImage.width-size)/2, sy=(sourceImage.height-size)/2;
+      const tmp=document.createElement('canvas');
+      tmp.width=tmp.height=size;
+      const tctx=tmp.getContext('2d');
+      tctx.drawImage(sourceImage,sx,sy,size,size,0,0,size,size);
+      const cellSize=Math.floor(size/gridSize);
+      cells=[];
+      for(let r=0;r<gridSize;r++){
+        for(let c=0;c<gridSize;c++){
+          const cc=document.createElement('canvas');
+          cc.width=cc.height=cellSize;
+          const cctx=cc.getContext('2d');
+          cctx.drawImage(tmp,c*cellSize,r*cellSize,cellSize,cellSize,0,0,cellSize,cellSize);
+          const id=(gridSize===9? String.fromCharCode(65+r)+(c+1): `R${r+1}C${c+1}`);
+          const gR=Math.floor(r/(gridSize/3)), gC=Math.floor(c/(gridSize/3));
+          const group=`G${String.fromCharCode(65+gR)}${gC+1}`;
+          const lR=r%(gridSize/3), lC=c%(gridSize/3);
+          const localRow = ['a','b','c','d','e','f','g','h','i'][ Math.floor(lR/((gridSize/3)/9)) ];
+          const localCol = (Math.floor(lC/((gridSize/3)/9))+1);
+          const imgD=cctx.getImageData(0,0,cellSize,cellSize);
+          let sum=0;
+          for(let i=0;i<imgD.data.length;i+=4){
+            sum+= imgD.data[i]*0.2126 + imgD.data[i+1]*0.7152 + imgD.data[i+2]*0.0722;
+          }
+          const lumaMean=(sum/(imgD.data.length/4))/255;
+          cells.push({id,row:r,col:c,canvas:cc,role:'',name:'',group,localRow,localCol,metrics:{lumaMean}});
+        }
+      }
+      segmented=true;
+      btnGrid.disabled=false; btnGraph.disabled=false;
+      document.getElementById('btn-export-mobile').disabled=false;
+      draw();
+    }
+
+    // --- Interaction ---
+    cv.addEventListener('pointerdown', (e) => {
+      if (!segmented) return;
+      const rect=cv.getBoundingClientRect();
+      const x=e.clientX-rect.left, y=e.clientY-rect.top;
+      const geo=gridGeometry(); if(!geo) return;
+      const {gridX,gridY,cellDisplay}=geo;
+
+      if (x<gridX||y<gridY||x>gridX+cellDisplay*gridSize||y>gridY+cellDisplay*gridSize) return;
+      const c=Math.floor((x-gridX)/cellDisplay);
+      const r=Math.floor((y-gridY)/cellDisplay);
+      selectedIndex = r*gridSize + c;
+
+      clearTimeout(longPressTimer);
+      // Increased long press duration for better differentiation from a regular tap on touch
+      longPressTimer = setTimeout(() => {
+        e.preventDefault();
+        openEditor(selectedIndex);
+      }, 500);
+    });
+
+    cv.addEventListener('pointerup', () => { clearTimeout(longPressTimer); });
+
+    cv.addEventListener('click', (e) => {
+      if (!segmented) return;
+      if (e.defaultPrevented) return;
+
+      const rect=cv.getBoundingClientRect();
+      const x=e.clientX-rect.left, y=e.clientY-rect.top;
+      const now=e.timeStamp;
+      const dbl = (now - lastTapTime) < 300;
+      lastTapTime = now;
+
+      const geo=gridGeometry(); if(!geo) return;
+      const {gridX,gridY,cellDisplay}=geo;
+
+      if (x<gridX||y<gridY||x>gridX+cellDisplay*gridSize||y>gridY+cellDisplay*gridSize) return;
+      const c=Math.floor((x-gridX)/cellDisplay);
+      const r=Math.floor((y-gridY)/cellDisplay);
+      const i=r*gridSize+c;
+      const cell=cells[i]; if(!cell) return;
+      selectedIndex = i;
+
+      if (dbl) { openEditor(i); return; }
+
+      if (annotate) { cell.role = role; ping(330+(r%7)*30); draw(); }
+    });
+
+
+    // ===== Exporters
+    function drawLabelsOnExport(octx, cell, cellX, cellY, cellDim){
+        if (!cell.name && !cell.role) return;
+
+        const roleColor = {
+            'L': '#79f2c1', 'E': '#ffeb78', 'G': '#70bfff', 
+            'O': '#ff708c', 'S': '#c670ff', 'U': '#ffac70', '': '#ffffff'
+        }[cell.role || ''];
+        
+        const labelText = cell.name || cell.role;
+        octx.font = 'bold 36px ui-monospace'; // Use a larger font for high-res export
+        
+        // Measure text for background box
+        const textMetrics = octx.measureText(labelText);
+        const bw = Math.max(80, textMetrics.width + 30);
+        const bh = 50;
+        const bx = cellX + cellDim / 2 - bw / 2;
+        const by = cellY + cellDim / 2 - bh / 2;
+
+        // Draw background box for label
+        octx.fillStyle = 'rgba(0,0,0,0.6)';
+        roundRect(octx, bx, by, bw, bh, 10);
+        octx.fill();
+        octx.strokeStyle = roleColor;
+        octx.lineWidth = 4;
+        octx.stroke();
+
+        // Draw text
+        octx.fillStyle = roleColor;
+        octx.textAlign = 'center';
+        octx.textBaseline = 'middle';
+        octx.fillText(labelText, cellX + cellDim / 2, cellY + cellDim / 2);
+    }
+
+    function drawCellIdOnExport(octx, cell, cellX, cellY, cellDim){
+        const idText = cell.id;
+        octx.font = 'bold 24px ui-monospace';
+        octx.fillStyle = '#000000'; // Black outline for visibility
+        octx.strokeStyle = '#20f1b7'; // Neon cyan color
+        octx.lineWidth = 6;
+        octx.textAlign = 'left';
+        octx.textBaseline = 'top';
+
+        // Draw outlined ID
+        octx.strokeText(idText, cellX + 12, cellY + 12);
+        octx.fillStyle = '#000000';
+        octx.fillText(idText, cellX + 12, cellY + 12);
+    }
+
+    function exportFullGrid(){
+      if (!segmented) return;
+
+      const scale = 4; // Upscale factor for a high-resolution export
+      const baseSize = 800; // Define a base grid size for calculation
+      const gridTotalSize = baseSize * scale;
+      const cellDim = Math.floor(gridTotalSize / gridSize);
+
+      const out=document.createElement('canvas');
+      out.width=out.height=gridTotalSize;
+      const octx=out.getContext('2d');
+      
+      // 1. Draw Cell Images
+      for(let r=0;r<gridSize;r++){
+        for(let c=0;c<gridSize;c++){
+          const cell=cells[r*gridSize+c];
+          if(!cell) continue;
+          const x=c*cellDim, y=r*cellDim;
+          // Draw the actual image content
+          octx.drawImage(cell.canvas,x,y,cellDim,cellDim);
+        }
+      }
+
+      // 2. Draw Labels and IDs
+      for(let r=0;r<gridSize;r++){
+        for(let c=0;c<gridSize;c++){
+          const cell=cells[r*gridSize+c];
+          if(!cell) continue;
+          const x=c*cellDim, y=r*cellDim;
+          drawCellIdOnExport(octx, cell, x, y, cellDim);
+          drawLabelsOnExport(octx, cell, x, y, cellDim);
+        }
+      }
+      
+      // 3. Draw Grid Lines
+      octx.strokeStyle='rgba(32,241,183,1)'; // Fully opaque cyan
+      octx.lineWidth=4; // Thicker lines
+
+      for(let i=1;i<gridSize;i++){
+        const pos = i*cellDim;
+        // Vertical lines
+        octx.beginPath(); octx.moveTo(pos, 0); octx.lineTo(pos, gridTotalSize); octx.stroke();
+        // Horizontal lines
+        octx.beginPath(); octx.moveTo(0, pos); octx.lineTo(gridTotalSize, pos); octx.stroke();
+      }
+
+      // 4. Draw 3x3 Group Lines (If enabled in UI)
+      if(show3x3){
+        octx.strokeStyle='rgba(32,241,183,1)';
+        octx.lineWidth=6; // Even thicker for group lines
+        const step=(gridSize/3)*cellDim;
+        for(let i=1;i<3;i++){
+          const pos = i*step;
+          // Vertical
+          octx.beginPath(); octx.moveTo(pos,0); octx.lineTo(pos,gridTotalSize); octx.stroke();
+          // Horizontal
+          octx.beginPath(); octx.moveTo(0,pos); octx.lineTo(gridTotalSize,pos); octx.stroke();
+        }
+      }
+
+      // 5. Draw Outer Border (Final Frame)
+      octx.strokeStyle='rgba(32,241,183,1)';
+      octx.lineWidth=8; 
+      octx.strokeRect(0,0,gridTotalSize,gridTotalSize);
+
+      const a=document.createElement('a');
+      a.download=`grid-${gridSize}x${gridSize}-annotated.png`;
+      a.href=out.toDataURL('image/png');
+      a.click();
+    }
+
+    function exportGraph(){
+      const roleMap = {L:'Location',E:'Entity',G:'Goal',O:'Obstacle',S:'Shift',U:'Solution','':'Unlabeled'};
+      const nodes = cells.map(c => ({
+        id: c.id, label: (c.name ? c.name : (c.id + (c.role ? ":"+c.role : ''))),
+        name: (c.name || ''), type: roleMap[c.role || ''], role: (c.role || ''),
+        group: c.group, globalRow: c.row + 1, globalCol: c.col + 1,
+        localRow: c.localRow, localCol: c.localCol, luma: c.metrics.lumaMean
+      }));
+
+      const edges = [];
+      const idx = (r,c)=> r*gridSize + c;
+
+      for (let r=0; r<gridSize; r++){
+        for (let c=0; c<gridSize; c++){
+          const a=cells[idx(r,c)]; if(!a) continue;
+          if (c+1<gridSize) edges.push({source:a.id, target:cells[idx(r,c+1)].id, kind:'adjacent'});
+          if (r+1<gridSize) edges.push({source:a.id, target:cells[idx(r+1,c)].id, kind:'adjacent'});
+        }
+      }
+
+      for (const c of cells){
+        if (c.role==='E'){
+          cells.filter(n=>n.group===c.group && n.role==='G').forEach(g=>edges.push({source:c.id,target:g.id,kind:'pursues'}));
+          cells.filter(n=>n.group===c.group && n.role==='O').forEach(o=>edges.push({source:c.id,target:o.id,kind:'blocked-by'}));
+        }
+        if (c.role==='U'){
+          cells.filter(n=>n.group===c.group && n.role==='G').forEach(g=>edges.push({source:c.id,target:g.id,kind:'satisfies'}));
+        }
+        if (c.role==='S'){
+          cells.filter(n=>n.group===c.group && n.id!==c.id).forEach(o=>edges.push({source:o.id,target:c.id,kind:'shifted-by'}));
+        }
+      }
+
+      const tetrad = {L:[],E:[],G:[],O:[],S:[],U:[]};
+      cells.forEach(c => { if (c.role) tetrad[c.role].push(c.id); });
+
+      const payload = {
+        schema: 'LEGOSU-graph@1', grid: gridSize, compatible_with: 'thousand-tetrad-00.html',
+        nodes, edges, tetrad
+      };
+
+      const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.download = `legosu-${gridSize}.json`;
+      a.href = URL.createObjectURL(blob);
+      a.click();
+    }
+
+    // ===== Drawing
+    function roundRect(p,x,y,w,h,r){
+      p.beginPath();
+      p.moveTo(x+r,y); p.arcTo(x+w,y,x+w,y+h,r);
+      p.arcTo(x+w,y+h,x,y+h,r); p.arcTo(x,y+h,x,y,r);
+      p.arcTo(x,y,x+w,y,r);
+      p.closePath();
+    }
+
+    function gridGeometry(){
+      if(!hasImage) return null;
+
+      const w=cv.width/DPR, h=cv.height/DPR;
+      const isDesktop = w >= 1024;
+      const modebarH = document.getElementById('modebar').offsetHeight || 0;
+      // Get the height of the new top annotation bar for mobile calculation
+      const mobileAnnotateBarH = document.getElementById('annotate-mobile-bar')?.offsetHeight || 0;
+
+
+      let sidePad, topPad, bottomPad;
+
+      if (isDesktop) {
+        const sidebarWidth = 220; // Matches CSS var
+        sidePad = sidebarWidth + 30; // Sidebar width + margin
+        topPad = modebarH + 20;
+        bottomPad = 20; // Small bottom margin
+      } else {
+        const dockH = document.getElementById('dock-mobile').offsetHeight || 0;
+        // Top calculation now includes the new fixed annotation bar
+        sidePad = 15;
+        topPad = modebarH + mobileAnnotateBarH + 20;
+        bottomPad = dockH + 20;
+      }
+
+      const availW = w - sidePad * 2;
+      const availH = h - (topPad + bottomPad);
+      const size = Math.max(60, Math.min(availW, availH));
+      const x = (w - size) / 2;
+      const y = topPad;
+
+      return {
+        gridDisplaySize: Math.floor(size),
+        gridX: Math.floor(x),
+        gridY: Math.floor(y),
+        cellDisplay: Math.floor(size / gridSize)
+      }
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,cv.width,cv.height);
+      ctx.save();
+      ctx.scale(1,1);
+
+      const geo=gridGeometry();
+      if(!geo){
+        ctx.fillStyle='rgba(32,241,183,.7)';
+        ctx.textAlign='center';
+        ctx.fillText('Upload image to begin', innerWidth/2, innerHeight/2);
+        ctx.restore();
+        return;
+      }
+      const {gridDisplaySize,gridX,gridY,cellDisplay}=geo;
+
+      // Draw grid content (image/cells)
+      if(segmented){
+        for(let r=0;r<gridSize;r++){
+          for(let c=0;c<gridSize;c++){
+            const cell=cells[r*gridSize+c]; if(!cell) continue;
+            const x=gridX+c*cellDisplay, y=gridY+r*cellDisplay;
+            const dim=(highlight!=='ALL' && cell.role!==highlight);
+
+            if(dim) ctx.save(), ctx.globalAlpha=.38;
+            ctx.drawImage(cell.canvas,x,y,cellDisplay,cellDisplay);
+            if(dim) ctx.restore();
+
+            // ID and Label/Role
+            ctx.font='10px ui-monospace'; ctx.fillStyle='#00ffc2'; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=3; ctx.textAlign='left';
+            ctx.strokeText(cell.id, x+4, y+12); ctx.fillText(cell.id, x+4, y+12);
+
+            if(cell.name || cell.role){
+              const labelText = cell.name || cell.role;
+              const bw = Math.max(18, ctx.measureText(labelText).width + 10);
+              const bh = 16;
+              const bx = x + cellDisplay / 2 - bw / 2;
+              const by = y + cellDisplay / 2 - bh / 2;
+              roundRect(ctx, bx, by, bw, bh, 4);
+              ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fill();
+              ctx.strokeStyle = 'rgba(32,241,183,.8)'; ctx.lineWidth = 1; ctx.stroke();
+              ctx.fillStyle = '#cafff0'; ctx.textAlign = 'center';
+              ctx.font = 'bold 13px ui-monospace';
+              ctx.fillText(labelText, x + cellDisplay / 2, y + cellDisplay / 2 + 5);
+            }
+          }
+        }
+      }
+      else if(hasImage){ // show fit image
+        const s=gridDisplaySize; const aspect=sourceImage.width/sourceImage.height; let dw,dh;
+        if(aspect>1){ dw=s; dh=s/aspect; } else { dh=s; dw=s*aspect; }
+        const ix=gridX+(s-dw)/2, iy=gridY+(s-dh)/2;
+        ctx.drawImage(sourceImage, ix, iy, dw, dh);
+      }
+
+      // Draw Grid Lines and Axes
+      ctx.strokeStyle='rgba(32,241,183,.35)'; ctx.lineWidth=1;
+      for(let i=0;i<=gridSize;i++){
+        ctx.beginPath(); ctx.moveTo(gridX+i*cellDisplay, gridY); ctx.lineTo(gridX+i*cellDisplay, gridY+gridDisplaySize); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(gridX, gridY+i*cellDisplay); ctx.lineTo(gridX+gridDisplaySize, gridY+i*cellDisplay); ctx.stroke();
+      }
+
+      // 3x3 groups
+      if(show3x3){
+        ctx.strokeStyle='rgba(32,241,183,.85)'; ctx.lineWidth=2;
+        const step=(gridSize/3)*cellDisplay;
+        for(let i=1;i<3;i++){
+          ctx.beginPath(); ctx.moveTo(gridX+i*step,gridY); ctx.lineTo(gridX+i*step,gridY+gridDisplaySize); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(gridX,gridY+i*step); ctx.lineTo(gridX+gridDisplaySize,gridY+i*step); ctx.stroke();
+        }
+        for(let gr=0; gr<3; gr++){
+          for(let gc=0; gc<3; gc++){
+            const label=`G${String.fromCharCode(65+gr)}${gc+1}`;
+            const lx=gridX+gc*step+4, ly=gridY+gr*step+4;
+            ctx.fillStyle='rgba(0,0,0,.55)'; ctx.strokeStyle='rgba(32,241,183,.8)';
+            roundRect(ctx,lx,ly,28,16,6); ctx.fill(); ctx.stroke();
+            ctx.fillStyle='rgba(32,241,183,1)'; ctx.font='bold 11px ui-monospace';
+            ctx.fillText(label,lx+14,ly+12);
+          }
+        }
+      }
+
+      // axes labels
+      ctx.fillStyle='rgba(32,241,183,.8)'; ctx.textAlign='center'; ctx.font='10px ui-monospace';
+      for(let i=0;i<gridSize;i++){
+        ctx.fillText(i+1, gridX+i*cellDisplay+cellDisplay/2, gridY-6);
+        const rowLabel=(gridSize===9? String.fromCharCode(65+i): `R${i+1}`);
+        ctx.textAlign='right'; ctx.fillText(rowLabel, gridX-6, gridY+i*cellDisplay+cellDisplay/2+4);
+        ctx.textAlign='center';
+      }
+
+      ctx.strokeStyle='rgba(32,241,183,.7)'; ctx.lineWidth=2;
+      ctx.strokeRect(gridX,gridY,gridDisplaySize,gridDisplaySize);
+      ctx.restore();
+    }
+    // initial draw
+    draw();
+  </script>
+</body>
+</html>
