@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>MANSIONS FOR THE SOULS · Grid Sequencer · LEGOSU v5 (Bugfix)</title>
+<style>
+:root{
+  --bg0:#060a0a;--bg1:#0b1012;--cy:#20f1b7;--ink:#e9fff6;--muted:#7fe9cf;
+  --panel:rgba(0,0,0,.72);--ring:rgba(32,241,183,.24);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(140% 120% at 50% 0%,var(--bg1) 0%,var(--bg0) 60%);
+     color:var(--ink);font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+     -webkit-font-smoothing:antialiased; touch-action:manipulation}
+canvas{position:fixed;inset:0;display:block}
+
+/* Top mode toggle */
+#modebar{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:20}
+.mode{border:1.5px solid var(--cy);background:var(--panel);color:var(--cy);padding:8px 12px;border-radius:10px;letter-spacing:.12em}
+.mode.active{background:var(--cy);color:#001a12}
+
+/* Bottom control dock */
+#dock{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;display:flex;gap:8px;flex-wrap:nowrap;overflow:auto;max-width:96vw;z-index:20;background:var(--panel);padding:8px;border:1px solid var(--ring);border-radius:12px}
+.btn{border:1px solid var(--ring);background:transparent;color:var(--ink);padding:8px 10px;border-radius:10px;white-space:nowrap}
+.btn[disabled]{opacity:.4}
+
+/* Annotate bar */
+#annotate{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:20}
+.tool{width:44px;height:44px;display:grid;place-items:center;border:1.5px solid var(--ring);border-radius:10px;color:var(--muted);background:var(--panel);font-weight:700}
+.tool.active{border-color:var(--cy);color:#001a12;background:var(--cy)}
+select{border:1px solid var(--ring);background:var(--panel);color:var(--ink);border-radius:10px;padding:8px}
+
+#gate{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.92);z-index:50}
+.card{border:1.5px solid var(--cy);background:var(--panel);padding:16px 18px;border-radius:12px;text-align:center;max-width:520px;box-shadow:0 0 24px rgba(32,241,183,.25)}
+.card h1{margin:0 0 6px 0;letter-spacing:.22em;color:var(--cy);font-size:14px}
+.card p{margin:6px 0;opacity:.85}
+
+.badge{position:absolute;inset:auto auto 8px 8px;background:rgba(0,0,0,.55);border:1px solid var(--ring);border-radius:8px;padding:2px 6px;color:var(--muted)}
+
+/* Inline editor */
+#cell-editor{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;display:none;z-index:30;background:var(--panel);border:1.5px solid var(--ring);border-radius:12px;padding:10px;backdrop-filter:blur(6px);min-width:280px}
+#cell-editor.show{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+#cell-editor input[type=text]{flex:1 1 160px;min-width:160px;border:1px solid var(--ring);background:rgba(0,0,0,.35);color:var(--ink);padding:8px;border-radius:10px}
+#cell-editor .small{border:1px solid var(--ring);background:transparent;color:var(--ink);padding:6px 10px;border-radius:10px}
+#cell-editor .title{width:100%;text-align:center;color:var(--muted);font-weight:700}
+#cell-editor .role{border:1px solid var(--ring);background:var(--panel);color:var(--ink);padding:8px;border-radius:10px}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="badge" id="hint">Upload → Segment → Annotate → Export</div>
+
+<div id="modebar">
+  <button class="mode active" data-mode="grid">9×9</button>
+  <button class="mode" data-mode="cube">27×27</button>
+  <label class="mode" style="display:flex;gap:6px;align-items:center"><input id="show3" type="checkbox"/> 3×3</label>
+</div>
+
+<div id="annotate">
+  <button class="tool" id="toggle-annotate">✎</button>
+  <button class="tool" data-role="L">L</button>
+  <button class="tool" data-role="E">E</button>
+  <button class="tool" data-role="G">G</button>
+  <button class="tool" data-role="O">O</button>
+  <button class="tool" data-role="S">S</button>
+  <button class="tool" data-role="U">U</button>
+  <select id="highlight">
+    <option value="ALL">Highlight: ALL</option>
+    <option value="L">L</option><option value="E">E</option><option value="G">G</option>
+    <option value="O">O</option><option value="S">S</option><option value="U">U</option>
+  </select>
+</div>
+
+<div id="dock">
+  <button class="btn" id="btn-upload">Upload</button>
+  <button class="btn" id="btn-seg" disabled>Segment</button>
+  <button class="btn" id="btn-export-grid" disabled>Export Full Grid (PNG)</button>
+  <button class="btn" id="btn-export-graph" disabled>Export Scene Graph (JSON)</button>
+  <button class="btn" id="btn-reset">Reset</button>
+  <button class="btn" id="btn-tests" title="Run self tests (adds #test to URL)">Run Tests</button>
+</div>
+<input id="file" type="file" accept="image/*" hidden>
+
+<!-- Inline editor for naming + typing a LEGOSU element -->
+<div id="cell-editor">
+  <div class="title">Edit <span id="ce-id"></span></div>
+  <input id="ce-name" type="text" placeholder="Name (e.g., ‘Control Room Console’)" />
+  <select id="ce-role" class="role">
+    <option value="">Type…</option>
+    <option value="L">Location</option>
+    <option value="E">Entity</option>
+    <option value="G">Goal</option>
+    <option value="O">Obstacle</option>
+    <option value="S">Shift</option>
+    <option value="U">Solution</option>
+  </select>
+  <button class="small" id="ce-save">Save</button>
+  <button class="small" id="ce-cancel">Cancel</button>
+</div>
+
+<div id="gate">
+  <div class="card">
+    <h1>MANSIONS FOR THE SOULS</h1>
+    <p>9×9 / 27×27 image grid with per‑cell labels (L,E,G,O,S,U) and scene‑graph export (LEGOSU).</p>
+    <p style="opacity:.7">Tap ENTER to enable audio + haptics.</p>
+    <p><button class="mode" id="enter">ENTER</button></p>
+  </div>
+</div>
+
+<script>
+// ===== Basic state
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d', {willReadFrequently:true});
+let DPR = Math.min(2, (window.devicePixelRatio||1));
+let gridSize = 9; // 9 or 27
+let show3x3 = false;
+let annotate = false; let role = 'L'; let highlight = 'ALL';
+let hasImage=false, segmented=false, sourceImage=null;
+let cells=[]; // {id,row,col,canvas,role,name,group,localRow,localCol,metrics}
+let selectedIndex=-1; let longPressTimer=null; let lastTapTime=0;
+
+function resize(){
+  const w=innerWidth, h=innerHeight; cv.width=w*DPR; cv.height=h*DPR; cv.style.width=w+'px'; cv.style.height=h+'px'; ctx.setTransform(DPR,0,0,DPR,0,0); draw();
+}
+addEventListener('resize', resize,{passive:true});
+resize();
+
+// ===== Simple audio + haptic
+const AC = new (window.AudioContext||window.webkitAudioContext)();
+const master=AC.createGain(); master.gain.value=0.18; master.connect(AC.destination);
+function ping(freq){ const now=AC.currentTime; const o=AC.createOscillator(); o.type='sine'; o.frequency.value=freq; const g=AC.createGain(); g.gain.value=0.0001; o.connect(g); g.connect(master); g.gain.exponentialRampToValueAtTime(0.2, now+0.02); g.gain.exponentialRampToValueAtTime(0.0001, now+0.25); o.start(); o.stop(now+0.28); try{navigator.vibrate&&navigator.vibrate(12);}catch(e){} }
+
+// ===== UI wiring
+const modes=[...document.querySelectorAll('.mode[data-mode]')];
+modes.forEach(b=>b.onclick=()=>{modes.forEach(x=>x.classList.remove('active')); b.classList.add('active'); gridSize=(b.dataset.mode==='grid'?9:27); segmented=false; cells=[]; draw(); if(hasImage) btnSeg.disabled=false;});
+
+document.getElementById('show3').onchange=e=>{show3x3=e.target.checked; draw();};
+
+const toolBtns=[...document.querySelectorAll('.tool')];
+function setTool(el){ toolBtns.forEach(x=>x.classList.remove('active')); el.classList.add('active'); if(el.dataset.role) role=el.dataset.role; }
+
+document.getElementById('toggle-annotate').onclick=(e)=>{ annotate=!annotate; setTool(e.currentTarget); };
+[...document.querySelectorAll('.tool[data-role]')].forEach(el=> el.onclick=()=> setTool(el));
+
+document.getElementById('highlight').onchange=e=>{highlight=e.target.value; draw();};
+
+const btnUpload=document.getElementById('btn-upload');
+const btnSeg=document.getElementById('btn-seg');
+const btnGrid=document.getElementById('btn-export-grid');
+const btnGraph=document.getElementById('btn-export-graph');
+const btnReset=document.getElementById('btn-reset');
+const btnTests=document.getElementById('btn-tests');
+const file=document.getElementById('file');
+
+btnUpload.onclick=()=>file.click();
+file.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const img=new Image(); img.onload=()=>{sourceImage=img; hasImage=true; segmented=false; cells=[]; btnSeg.disabled=false; draw();}; img.src=URL.createObjectURL(f); };
+
+document.getElementById('enter').onclick=async()=>{ try{await AC.resume(); document.getElementById('gate').style.display='none';}catch(e){} };
+
+btnSeg.onclick=()=>{ if(!hasImage) return; segment(); };
+btnGrid.onclick=()=> exportFullGrid();
+btnGraph.onclick=()=> exportGraph();
+btnReset.onclick=()=>{ hasImage=false; segmented=false; sourceImage=null; cells=[]; draw(); };
+btnTests.onclick=()=>{ if(!location.hash.includes('test')) location.hash = '#test'; runTests(); };
+
+// ===== Segmentation
+function segment(){
+  // square crop to shortest side
+  const size=Math.min(sourceImage.width, sourceImage.height);
+  const sx=(sourceImage.width-size)/2, sy=(sourceImage.height-size)/2;
+  const tmp=document.createElement('canvas'); tmp.width=tmp.height=size; const tctx=tmp.getContext('2d');
+  tctx.drawImage(sourceImage,sx,sy,size,size,0,0,size,size);
+  const cellSize=Math.floor(size/gridSize);
+  cells=[];
+  for(let r=0;r<gridSize;r++){
+    for(let c=0;c<gridSize;c++){
+      const cc=document.createElement('canvas'); cc.width=cc.height=cellSize; const cctx=cc.getContext('2d');
+      cctx.drawImage(tmp,c*cellSize,r*cellSize,cellSize,cellSize,0,0,cellSize,cellSize);
+      const id=(gridSize===9? String.fromCharCode(65+r)+(c+1): `R${r+1}C${c+1}`);
+      // group + local
+      const gR=Math.floor(r/(gridSize/3)), gC=Math.floor(c/(gridSize/3));
+      const group=`G${String.fromCharCode(65+gR)}${gC+1}`;
+      const lR=r%(gridSize/3), lC=c%(gridSize/3);
+      const localRow = ['a','b','c','d','e','f','g','h','i'][ Math.floor(lR/((gridSize/3)/9)) ];
+      const localCol = (Math.floor(lC/((gridSize/3)/9))+1);
+      // luma metric
+      const imgD=cctx.getImageData(0,0,cellSize,cellSize); let sum=0; for(let i=0;i<imgD.data.length;i+=4){ sum+= imgD.data[i]*0.2126 + imgD.data[i+1]*0.7152 + imgD.data[i+2]*0.0722; }
+      const lumaMean=(sum/(imgD.data.length/4))/255;
+      cells.push({id,row:r,col:c,canvas:cc,role:'',name:'',group,localRow,localCol,metrics:{lumaMean}});
+    }
+  }
+  segmented=true; btnGrid.disabled=false; btnGraph.disabled=false; draw();
+}
+
+// ===== Interaction (tap to set type; long-press/double-tap to edit)
+cv.addEventListener('pointerdown',(e)=>{
+  if(!segmented) return;
+  const rect=cv.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
+  const geo=gridGeometry(); if(!geo) return; const {gridX,gridY,cellDisplay}=geo;
+  if(x<gridX||y<gridY||x>gridX+cellDisplay*gridSize||y>gridY+cellDisplay*gridSize) return;
+  const c=Math.floor((x-gridX)/cellDisplay); const r=Math.floor((y-gridY)/cellDisplay);
+  selectedIndex = r*gridSize + c;
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(()=>{ openEditor(selectedIndex); }, 450);
+});
+cv.addEventListener('pointerup',()=>{ clearTimeout(longPressTimer); });
+cv.addEventListener('click',(e)=>{
+  if(!segmented) return;
+  const rect=cv.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
+  const now=e.timeStamp; const dbl=(now-lastTapTime)<300; lastTapTime=now;
+  const geo=gridGeometry(); if(!geo) return; const {gridX,gridY,cellDisplay}=geo;
+  if(x<gridX||y<gridY||x>gridX+cellDisplay*gridSize||y>gridY+cellDisplay*gridSize) return;
+  const c=Math.floor((x-gridX)/cellDisplay); const r=Math.floor((y-gridY)/cellDisplay); const i=r*gridSize+c;
+  const cell=cells[i]; if(!cell) return; selectedIndex=i;
+  if(dbl){ openEditor(i); return; }
+  if(annotate){ cell.role=role; ping(330+(r%7)*30); draw(); }
+});
+
+// Editor wiring
+const ed=document.getElementById('cell-editor');
+const ceId=document.getElementById('ce-id');
+const ceName=document.getElementById('ce-name');
+const ceRole=document.getElementById('ce-role');
+function openEditor(i){ const cell=cells[i]; if(!cell) return; ceId.textContent=cell.id; ceName.value=cell.name||''; ceRole.value=cell.role||''; ed.classList.add('show'); setTimeout(()=>ceName.focus(),10); }
+function closeEditor(){ ed.classList.remove('show'); selectedIndex=-1; }
+
+document.getElementById('ce-save').onclick=()=>{ if(selectedIndex<0) return; const cell=cells[selectedIndex]; cell.name=ceName.value.trim(); if(ceRole.value!==undefined) cell.role=ceRole.value; ping(520); closeEditor(); draw(); };
+
+document.getElementById('ce-cancel').onclick=()=> closeEditor();
+
+// ===== Graph builder (pure) + exporters
+function buildGraphPayload(){
+  const roleMap={L:'Location',E:'Entity',G:'Goal',O:'Obstacle',S:'Shift',U:'Solution','':'Unlabeled'};
+  const nodes=cells.map(c=>({
+    id:c.id,
+    label: (c.name? c.name : c.id + (c.role? ':'+c.role:'')),
+    name: (c.name||''),
+    type: roleMap[c.role||''],
+    role: (c.role||''),
+    group:c.group,
+    globalRow:c.row+1, globalCol:c.col+1,
+    localRow:c.localRow, localCol:c.localCol,
+    luma:c.metrics.lumaMean
+  }));
+  const edges=[]; const idx=(r,c)=>r*gridSize+c; 
+  for(let r=0;r<gridSize;r++){
+    for(let c=0;c<gridSize;c++){
+      const a=cells[idx(r,c)]; if(!a) continue;
+      if(c+1<gridSize) edges.push({source:a.id,target:cells[idx(r,c+1)].id,kind:'adjacent'});
+      if(r+1<gridSize) edges.push({source:a.id,target:cells[idx(r+1,c)].id,kind:'adjacent'});
+    }
+  }
+  for(const c of cells){
+    if(c.role==='E'){
+      const goals=cells.filter(n=>n.group===c.group && n.role==='G'); goals.forEach(g=>edges.push({source:c.id,target:g.id,kind:'pursues'}));
+      const obs=cells.filter(n=>n.group===c.group && n.role==='O'); obs.forEach(o=>edges.push({source:c.id,target:o.id,kind:'blocked-by'}));
+    }
+    if(c.role==='U'){
+      const goals=cells.filter(n=>n.group===c.group && n.role==='G'); goals.forEach(g=>edges.push({source:c.id,target:g.id,kind:'satisfies'}));
+    }
+    if(c.role==='S'){
+      const others=cells.filter(n=>n.group===c.group && n.id!==c.id); others.forEach(o=>edges.push({source:o.id,target:c.id,kind:'shifted-by'}));
+    }
+  }
+  const tetrad={L:[],E:[],G:[],O:[],S:[],U:[]}; cells.forEach(c=>{ if(c.role) tetrad[c.role].push(c.id); });
+  return {schema:'LEGOSU-graph@1',grid:gridSize,compatible_with:'thousand-tetrad-00.html',nodes,edges,tetrad};
+}
+
+function exportGraph(){
+  const payload = buildGraphPayload();
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.download=`legosu-${gridSize}.json`; a.href=URL.createObjectURL(blob); a.click();
+}
+
+function exportFullGrid(){
+  const geo=gridGeometry(); if(!geo) return; const {gridDisplaySize} = geo; 
+  const out=document.createElement('canvas'); out.width=out.height=gridDisplaySize; const octx=out.getContext('2d');
+  const cellDisplay=Math.floor(gridDisplaySize/gridSize);
+  for(let r=0;r<gridSize;r++) for(let c=0;c<gridSize;c++){
+    const cell=cells[r*gridSize+c]; if(!cell) continue; octx.drawImage(cell.canvas,c*cellDisplay,r*cellDisplay,cellDisplay,cellDisplay);
+  }
+  // force border
+  octx.strokeStyle='rgba(32,241,183,.8)'; octx.lineWidth=2; octx.strokeRect(0,0,gridDisplaySize,gridDisplaySize);
+  const a=document.createElement('a'); a.download=`grid-${gridSize}x${gridSize}.png`; a.href=out.toDataURL('image/png'); a.click();
+}
+
+// ===== Drawing
+function roundRect(p,x,y,w,h,r){ p.beginPath(); p.moveTo(x+r,y); p.arcTo(x+w,y,x+w,y+h,r); p.arcTo(x+w,y+h,x,y+h,r); p.arcTo(x,y+h,x,y,r); p.arcTo(x,y,x+w,y,r); p.closePath(); }
+
+function gridGeometry(){ if(!hasImage) return null; const w=cv.width/DPR, h=cv.height/DPR; const dockH=(document.getElementById('dock').offsetHeight||0); const annH=(document.getElementById('annotate').offsetHeight||0); const topPad=70, sidePad=50, bottomPad=Math.max(140, dockH+annH+24); const availW=w-sidePad*2, availH=h-(topPad+bottomPad); const size=Math.max(60, Math.min(availW,availH)); const x=(w-size)/2, y=topPad; return {gridDisplaySize:Math.floor(size), gridX:Math.floor(x), gridY:Math.floor(y), cellDisplay:Math.floor(size/gridSize)} }
+
+function draw(){ ctx.clearRect(0,0,cv.width,cv.height); ctx.save(); ctx.scale(1,1);
+  const geo=gridGeometry(); if(!geo){ ctx.fillStyle='rgba(32,241,183,.7)'; ctx.textAlign='center'; ctx.fillText('Upload image to begin', innerWidth/2, innerHeight/2); ctx.restore(); return; }
+  const {gridDisplaySize,gridX,gridY,cellDisplay}=geo;
+  // image or blank
+  if(segmented){ for(let r=0;r<gridSize;r++){ for(let c=0;c<gridSize;c++){ const cell=cells[r*gridSize+c]; if(!cell) continue; const x=gridX+c*cellDisplay, y=gridY+r*cellDisplay; const dim=(highlight!=='ALL' && cell.role!==highlight); if(dim) {ctx.save(); ctx.globalAlpha=.38;} ctx.drawImage(cell.canvas,x,y,cellDisplay,cellDisplay); if(dim) ctx.restore(); // id
+        ctx.font='10px ui-monospace'; ctx.fillStyle='#00ffc2'; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=3; ctx.textAlign='left'; ctx.strokeText(cell.id, x+4, y+12); ctx.fillText(cell.id, x+4, y+12);
+        if(cell.role){ const bw=18,bh=16, bx=x+cellDisplay/2-bw/2, by=y+cellDisplay/2-bh/2; roundRect(ctx,bx,by,bw,bh,4); ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fill(); ctx.strokeStyle='rgba(32,241,183,.8)'; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#cafff0'; ctx.textAlign='center'; ctx.font='bold 13px ui-monospace'; ctx.fillText(cell.role, x+cellDisplay/2, y+cellDisplay/2+5); }
+  } } }
+  else if(hasImage){ // show fit image
+    const s=gridDisplaySize; const aspect=sourceImage.width/sourceImage.height; let dw,dh; if(aspect>1){ dw=s; dh=s/aspect; } else { dh=s; dw=s*aspect; } const ix=gridX+(s-dw)/2, iy=gridY+(s-dh)/2; ctx.drawImage(sourceImage, ix, iy, dw, dh);
+  }
+  // grid lines
+  ctx.strokeStyle='rgba(32,241,183,.35)'; ctx.lineWidth=1; for(let i=0;i<=gridSize;i++){ ctx.beginPath(); ctx.moveTo(gridX+i*cellDisplay, gridY); ctx.lineTo(gridX+i*cellDisplay, gridY+gridDisplaySize); ctx.stroke(); ctx.beginPath(); ctx.moveTo(gridX, gridY+i*cellDisplay); ctx.lineTo(gridX+gridDisplaySize, gridY+i*cellDisplay); ctx.stroke(); }
+  // 3x3 groups
+  if(show3x3){ ctx.strokeStyle='rgba(32,241,183,.85)'; ctx.lineWidth=2; const step=(gridSize/3)*cellDisplay; for(let i=1;i<3;i++){ ctx.beginPath(); ctx.moveTo(gridX+i*step,gridY); ctx.lineTo(gridX+i*step,gridY+gridDisplaySize); ctx.stroke(); ctx.beginPath(); ctx.moveTo(gridX,gridY+i*step); ctx.lineTo(gridX+gridDisplaySize,gridY+i*step); ctx.stroke(); } for(let gr=0; gr<3; gr++){ for(let gc=0; gc<3; gc++){ const label=`G${String.fromCharCode(65+gr)}${gc+1}`; const lx=gridX+gc*step+4, ly=gridY+gr*step+4; ctx.fillStyle='rgba(0,0,0,.55)'; ctx.strokeStyle='rgba(32,241,183,.8)'; roundRect(ctx,lx,ly,28,16,6); ctx.fill(); ctx.stroke(); ctx.fillStyle='rgba(32,241,183,1)'; ctx.font='bold 11px ui-monospace'; ctx.fillText(label,lx+14,ly+12); }} }
+  // axes labels
+  ctx.fillStyle='rgba(32,241,183,.8)'; ctx.textAlign='center'; ctx.font='10px ui-monospace'; for(let i=0;i<gridSize;i++){ ctx.fillText(i+1, gridX+i*cellDisplay+cellDisplay/2, gridY-6); const rowLabel=(gridSize===9? String.fromCharCode(65+i): `R${i+1}`); ctx.textAlign='right'; ctx.fillText(rowLabel, gridX-6, gridY+i*cellDisplay+cellDisplay/2+4); ctx.textAlign='center'; }
+  ctx.strokeStyle='rgba(32,241,183,.7)'; ctx.lineWidth=2; ctx.strokeRect(gridX,gridY,gridDisplaySize,gridDisplaySize);
+  ctx.restore();
+}
+
+// initial draw
+draw();
+
+// ====== Self Tests (run with #test or the "Run Tests" button)
+function assert(cond, msg){ if(!cond) throw new Error('Test failed: '+msg); }
+function logpass(name){ console.log('%cPASS','color:#0f0',name); }
+async function runTests(){
+  try{
+    console.log('Running tests…');
+    // Test 1: geometry is null before image
+    const g0 = gridGeometry();
+    assert(g0===null, 'gridGeometry should be null before image is set');
+    logpass('geometry-before-image');
+
+    // Test 2: create dummy image, segment, counts
+    const off=document.createElement('canvas'); off.width=off.height=180; const ox=off.getContext('2d');
+    const grad=ox.createLinearGradient(0,0,180,180); grad.addColorStop(0,'#000'); grad.addColorStop(1,'#fff'); ox.fillStyle=grad; ox.fillRect(0,0,180,180);
+    const url=off.toDataURL('image/png');
+    await new Promise((res)=>{ const img=new Image(); img.onload=()=>{ sourceImage=img; hasImage=true; segment(); res(); }; img.src=url; });
+    assert(cells.length===gridSize*gridSize,'segmentation should produce gridSize^2 cells');
+    logpass('segment-counts');
+
+    // Test 3: graph payload shape
+    cells[0].role='E'; cells[1].role='G';
+    const payload=buildGraphPayload();
+    assert(payload.schema && payload.nodes && payload.edges, 'payload has schema/nodes/edges');
+    assert(payload.nodes.length===cells.length,'nodes length matches cells');
+    logpass('graph-payload-shape');
+
+    console.log('%cAll tests passed','color:#0f0');
+  }catch(err){
+    console.error(err);
+    alert('Tests failed: '+err.message);
+  }
+}
+if(location.hash.includes('test')) setTimeout(runTests, 50);
+</script>
+</body>
+</html>
