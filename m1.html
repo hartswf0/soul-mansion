@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>MANSIONS FOR THE SOULS · 9×9 SEQUENCER · LEGOS LABELS v2</title>
+<style>
+:root{
+  --bg0:#000;--bg1:#0a0a0a;--cy:#00e5a0;--soul:#6b8cff;--ink:#e8f0e8;
+  --glow:0 0 20px rgba(0,229,160,.3);--panel:rgba(0,0,0,.8);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  background:radial-gradient(ellipse at 50% 20%, var(--bg1) 0%, var(--bg0) 70%);
+  font-family:monospace;color:var(--ink);-webkit-font-smoothing:antialiased;
+  touch-action:none;
+}
+#gate{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.95);z-index:9999;transition:opacity .3s}
+#gate.hide{opacity:0;pointer-events:none}
+.card{border:2px solid var(--cy);padding:20px;background:var(--panel);box-shadow:var(--glow);text-align:center;max-width:540px}
+.card h1{font-size:14px;letter-spacing:3px;color:var(--cy);margin-bottom:8px}
+.card p{font-size:11px;opacity:.8;margin:6px 0;line-height:1.4}
+.card button{margin-top:12px;padding:10px 20px;background:transparent;border:1px solid var(--cy);color:var(--cy);font:inherit;cursor:pointer;letter-spacing:2px;font-size:10px}
+.card button:hover{background:rgba(0,229,160,.1)}
+
+#mode-ui{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:100}
+.mode-btn{padding:8px 16px;background:var(--panel);border:1px solid var(--cy);color:var(--cy);font:inherit;font-size:9px;letter-spacing:2px;cursor:pointer;transition:all .1s}
+.mode-btn.active{background:var(--cy);color:#000;box-shadow:var(--glow)}
+
+#info-panel{position:fixed;top:60px;left:10px;background:var(--panel);padding:10px;border:1px solid var(--cy);font-size:9px;display:none;max-width:230px}
+#info-panel.show{display:block}
+.info-row{display:flex;justify-content:space-between;gap:10px;margin:2px 0}
+.info-row span:first-child{opacity:.6}
+
+#controls{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:100;flex-wrap:wrap;justify-content:center}
+button{padding:10px 16px;background:var(--panel);border:1px solid var(--cy);color:var(--cy);font:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;transition:all .1s}
+button:hover{background:rgba(0,229,160,.1)}
+button:active{transform:scale(.98)}
+button:disabled{opacity:.3;cursor:not-allowed}
+
+#seq-indicator{position:fixed;top:10px;right:10px;padding:6px 12px;background:var(--panel);border:1px solid var(--soul);font-size:9px;color:var(--soul);display:none}
+#seq-indicator.show{display:block}
+
+#upload{display:none}
+canvas{position:fixed;inset:0;display:block;cursor:crosshair}
+
+.layer-toggle{position:fixed;top:60px;right:10px;padding:6px;background:var(--panel);border:1px solid var(--cy);font-size:9px;color:var(--cy)}
+.layer-toggle label{display:flex;align-items:center;gap:6px;cursor:pointer}
+
+.legend{position:fixed;top:110px;right:10px;padding:6px 8px;background:var(--panel);border:1px solid var(--cy);font-size:9px;color:var(--cy);max-width:220px;display:none}
+.legend.show{display:block}
+.legend code{background:transparent;color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="card">
+    <h1>MANSIONS FOR THE SOULS</h1>
+    <p>"instruments of His will providing mansions for the souls that He creates"</p>
+    <p>—Alan Turing, 1950</p>
+    <p style="margin-top:12px">Upload image → Auto-segment into 9×9 or 27×27 (3×3 grouped) → Each cell becomes a mansion with spatial coordinates → Tap to trigger sounds → Export labeled groups + manifest.</p>
+    <button id="enter">ENTER MANSIONS</button>
+  </div>
+</div>
+
+<div id="mode-ui">
+  <button class="mode-btn active" data-mode="grid">9×9 GRID</button>
+  <button class="mode-btn" data-mode="cube">27×27 GRID</button>
+</div>
+
+<div class="layer-toggle">
+  <label>
+    <input type="checkbox" id="show-3x3">
+    <span>Show 3×3 GROUPS</span>
+  </label>
+  <label>
+    <input type="checkbox" id="show-legend">
+    <span>Legend</span>
+  </label>
+</div>
+
+<div id="info-panel"><div id="info-content"></div></div>
+<div id="seq-indicator">STEP: <span id="step-num">1</span>/16</div>
+<div class="legend" id="legend">
+  <div><b>LEGOS Labeling</b></div>
+  <div>Groups: <code>G[A–C][1–3]</code> (top→bottom, left→right)</div>
+  <div>Global cell (9×9): <code>A1..I9</code> • (27×27): <code>R1..R27 × C1..C27</code></div>
+  <div>Local-in-group: <code>a1..i9</code> (row a..i, col 1..9)</div>
+  <div>Manifest fields: <code>{group, groupRow, groupCol, globalRow, globalCol, localRow, localCol, id, lumaMean}</code></div>
+</div>
+
+<canvas id="cv"></canvas>
+
+<div id="controls">
+  <button id="btn-upload">UPLOAD IMAGE</button>
+  <button id="btn-segment" disabled>SEGMENT</button>
+  <button id="btn-play" disabled>▶ PLAY</button>
+  <button id="btn-export" disabled>EXPORT 9 GROUP IMAGES</button>
+  <button id="btn-manifest" disabled>EXPORT MANIFEST (JSON/CSV)</button>
+  <button id="btn-reset">RESET</button>
+</div>
+<input type="file" id="upload" accept="image/*" />
+
+<script>
+// ==== STATE ====
+let mode = 'grid'; // 'grid' (9×9) or 'cube' (27×27)
+let gridSize = 9;
+let show3x3 = false;
+let showLegend = false;
+let hasImage = false;
+let segmented = false;
+let cells = [];
+let transport = false;
+let seqStep = 0;
+let lastStepTime = 0;
+let tempo = 120; // BPM
+let manifest = [];
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d', { willReadFrequently: true });
+const upload = document.getElementById('upload');
+const infoPanel = document.getElementById('info-panel');
+const legendEl = document.getElementById('legend');
+
+let sourceImage = null;
+let DPR = window.devicePixelRatio || 1;
+
+// ==== RESIZE (fix transform accumulation) ====
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  cv.width = Math.floor(w * DPR);
+  cv.height = Math.floor(h * DPR);
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  ctx.setTransform(1,0,0,1,0,0); // reset first
+  ctx.scale(DPR, DPR);
+}
+
+// ==== AUDIO ====
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = audioCtx.createGain();
+masterGain.gain.value = 0.3;
+masterGain.connect(audioCtx.destination);
+
+function playNote(freq, pan = 0) {
+  const osc = audioCtx.createOscillator();
+  osc.frequency.value = freq;
+  osc.type = 'sine';
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0;
+  const panner = audioCtx.createStereoPanner();
+  panner.pan.value = pan;
+  osc.connect(gain); gain.connect(panner); panner.connect(masterGain);
+  const now = audioCtx.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.2, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+  osc.start(now); osc.stop(now + 0.3);
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+// ==== GATE ====
+ document.getElementById('enter').onclick = async () => {
+  await audioCtx.resume();
+  document.getElementById('gate').classList.add('hide');
+ };
+
+// ==== UI SWITCHES ====
+ document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    gridSize = mode === 'grid' ? 9 : 27;
+    if (hasImage && !segmented) document.getElementById('btn-segment').disabled = false;
+    draw();
+  };
+});
+
+document.getElementById('show-3x3').onchange = () => { show3x3 = document.getElementById('show-3x3').checked; draw(); };
+document.getElementById('show-legend').onchange = () => { showLegend = document.getElementById('show-legend').checked; legendEl.classList.toggle('show', showLegend); };
+
+// ==== UPLOAD ====
+ document.getElementById('btn-upload').onclick = () => upload.click();
+ upload.onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    sourceImage = img; hasImage = true; segmented = false; manifest = []; cells = [];
+    document.getElementById('btn-segment').disabled = false;
+    document.getElementById('btn-play').disabled = true;
+    document.getElementById('btn-export').disabled = true;
+    document.getElementById('btn-manifest').disabled = true;
+    draw();
+  };
+  img.src = URL.createObjectURL(file);
+ };
+
+// ==== SEGMENT ====
+ document.getElementById('btn-segment').onclick = () => {
+  if (!hasImage) return;
+  const size = Math.min(sourceImage.width, sourceImage.height);
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = tempCanvas.height = size;
+  const tempCtx = tempCanvas.getContext('2d');
+  const sx = (sourceImage.width - size) / 2;
+  const sy = (sourceImage.height - size) / 2;
+  tempCtx.drawImage(sourceImage, sx, sy, size, size, 0, 0, size, size);
+
+  const cellSize = Math.floor(size / gridSize);
+  cells = []; manifest = [];
+
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      const cellCanvas = document.createElement('canvas');
+      cellCanvas.width = cellCanvas.height = cellSize;
+      const cellCtx = cellCanvas.getContext('2d');
+      cellCtx.drawImage(tempCanvas, c * cellSize, r * cellSize, cellSize, cellSize, 0, 0, cellSize, cellSize);
+      const imgData = cellCtx.getImageData(0, 0, cellSize, cellSize);
+      const metrics = computeMetrics(imgData);
+
+      const alpha = idxToAlpha(r); // A..I for 9×9; A..AA.. for 27
+      const id9 = `${String.fromCharCode(65 + r)}${c + 1}`; // legacy 9×9 label
+      const idGlobal = gridSize === 9 ? id9 : `R${r+1}C${c+1}`;
+
+      const gR = Math.floor(r / (gridSize/3)); // 0..2
+      const gC = Math.floor(c / (gridSize/3)); // 0..2
+      const group = `G${String.fromCharCode(65 + gR)}${gC + 1}`; // GA1..GC3
+      const lR = r % (gridSize/3); // 0..(groupHeight-1)
+      const lC = c % (gridSize/3);
+      const localRowAlpha = idxToAlpha(Math.floor(lR / ((gridSize/3)/9))); // map to a..i
+      const localColNum = Math.floor(lC / ((gridSize/3)/9)) + 1; // 1..9
+
+      const cellObj = { id:idGlobal, row:r, col:c, canvas:cellCanvas, metrics, active:false, group, groupRow:gR, groupCol:gC, localRow:localRowAlpha.toLowerCase(), localCol:localColNum };
+      cells.push(cellObj);
+
+      manifest.push({
+        group,
+        groupRow:gR, groupCol:gC,
+        globalRow:r+1, globalCol:c+1,
+        localRow:cellObj.localRow, localCol:cellObj.localCol,
+        id:idGlobal,
+        lumaMean:metrics.lumaMean
+      });
+    }
+  }
+  segmented = true;
+  document.getElementById('btn-play').disabled = false;
+  document.getElementById('btn-export').disabled = false;
+  document.getElementById('btn-manifest').disabled = false;
+  draw();
+ };
+
+function computeMetrics(imgData){
+  const d = imgData.data; let sum = 0;
+  for (let i=0;i<d.length;i+=4){ sum += d[i]*0.2126 + d[i+1]*0.7152 + d[i+2]*0.0722; }
+  const lumaMean = sum / (d.length/4) / 255;
+  return { lumaMean };
+}
+
+function idxToAlpha(idx){ // 0→A ... 25→Z, 26→AA, etc.
+  let n = idx; let s = '';
+  while(true){ s = String.fromCharCode(65 + (n % 26)) + s; if (n < 26) break; n = Math.floor(n/26) - 1; }
+  return s;
+}
+
+// ==== DRAW ====
+function draw(){
+  const w = cv.width / DPR, h = cv.height / DPR;
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
+
+  if (!hasImage){
+    ctx.fillStyle = 'rgba(0,229,160,.3)'; ctx.font = '12px monospace'; ctx.textAlign='center';
+    ctx.fillText('UPLOAD IMAGE TO BEGIN', w/2, h/2); return;
+  }
+
+  const gridPadding = 60;
+  const availW = w - gridPadding * 2;
+  const availH = h - 180;
+  const gridDisplaySize = Math.min(availW, availH);
+  const gridX = (w - gridDisplaySize)/2;
+  const gridY = gridPadding + 20;
+
+  // source or segmented tiles
+  if (segmented){
+    const cellDisplay = gridDisplaySize / gridSize;
+    for (let i=0;i<cells.length;i++){
+      const c = cells[i];
+      const x = gridX + c.col * cellDisplay;
+      const y = gridY + c.row * cellDisplay;
+      ctx.drawImage(c.canvas, x, y, cellDisplay, cellDisplay);
+      if (c.active){ ctx.fillStyle='rgba(0,229,160,.25)'; ctx.fillRect(x,y,cellDisplay,cellDisplay); }
+      if (transport){
+        const cps = Math.ceil(cells.length/16), sStart = seqStep*cps, sEnd = Math.min(sStart+cps, cells.length);
+        if (i>=sStart && i<sEnd){ ctx.strokeStyle='rgba(107,140,255,.85)'; ctx.lineWidth=2; ctx.strokeRect(x,y,cellDisplay,cellDisplay); }
+      }
+      // tiny global id label shadow + fill
+      ctx.font='bold 10px monospace'; ctx.textAlign='left';
+      ctx.strokeStyle='#000'; ctx.lineWidth=3; ctx.strokeText(c.id, x+4, y+14);
+      ctx.fillStyle='#00ff99'; ctx.fillText(c.id, x+4, y+14);
+    }
+  } else {
+    const imgAspect = sourceImage.width / sourceImage.height;
+    let drawW, drawH; if (imgAspect>1){ drawW = gridDisplaySize; drawH = gridDisplaySize / imgAspect; } else { drawH = gridDisplaySize; drawW = gridDisplaySize * imgAspect; }
+    const imgX = gridX + (gridDisplaySize - drawW)/2, imgY = gridY + (gridDisplaySize - drawH)/2;
+    ctx.drawImage(sourceImage, imgX, imgY, drawW, drawH);
+  }
+
+  // overlays
+  const cellSize = gridDisplaySize / gridSize;
+
+  // group boundaries (3×3) — thicker lines
+  if (show3x3){
+    ctx.strokeStyle='rgba(0,229,160,.9)'; ctx.lineWidth=2.5;
+    const groupStep = gridSize/3 * cellSize; // group width in px
+    for (let i=1;i<3;i++){
+      // vertical
+      ctx.beginPath(); ctx.moveTo(gridX + i*groupStep, gridY); ctx.lineTo(gridX + i*groupStep, gridY + gridDisplaySize); ctx.stroke();
+      // horizontal
+      ctx.beginPath(); ctx.moveTo(gridX, gridY + i*groupStep); ctx.lineTo(gridX + gridDisplaySize, gridY + i*groupStep); ctx.stroke();
+    }
+
+    // group labels GA1..GC3 at top-left of each group with badge
+    const badgePad = 4; const badgeR = 6;
+    for (let gr=0; gr<3; gr++){
+      for (let gc=0; gc<3; gc++){
+        const gx = gridX + gc*groupStep + 3; const gy = gridY + gr*groupStep + 3;
+        const label = `G${String.fromCharCode(65+gr)}${gc+1}`;
+        // badge background
+        const metrics = ctx.measureText(label);
+        const bw = metrics.width + badgePad*2 + 4; const bh = 16;
+        // rounded rect
+        ctx.beginPath();
+        roundRect(ctx, gx, gy, bw, bh, badgeR);
+        ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fill();
+        ctx.lineWidth=1; ctx.strokeStyle='rgba(0,229,160,.85)'; ctx.stroke();
+        // text
+        ctx.fillStyle='rgba(0,229,160,1)'; ctx.font='bold 11px monospace'; ctx.textAlign='left'; ctx.fillText(label, gx + badgePad, gy + 12);
+      }
+    }
+  }
+
+  // fine grid (cells)
+  ctx.strokeStyle = 'rgba(0,229,160,.35)'; ctx.lineWidth=1;
+  for (let i=0;i<=gridSize;i++){
+    ctx.beginPath(); ctx.moveTo(gridX + i*cellSize, gridY); ctx.lineTo(gridX + i*cellSize, gridY + gridDisplaySize); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gridX, gridY + i*cellSize); ctx.lineTo(gridX + gridDisplaySize, gridY + i*cellSize); ctx.stroke();
+  }
+
+  // border
+  ctx.strokeStyle='rgba(0,229,160,.7)'; ctx.lineWidth=2; ctx.strokeRect(gridX, gridY, gridDisplaySize, gridDisplaySize);
+
+  // axes labels (top numbers, left letters or R/C for 27)
+  ctx.fillStyle='rgba(0,229,160,.7)'; ctx.font='10px monospace'; ctx.textAlign='center';
+  const labelEvery = 1;
+  for (let i=0;i<gridSize;i+=labelEvery){
+    // top numbers
+    ctx.fillText(i+1, gridX + i*cellSize + cellSize/2, gridY - 8);
+    // left letters or R#
+    ctx.textAlign='right';
+    const rowLabel = (gridSize===9) ? String.fromCharCode(65+i) : `R${i+1}`;
+    ctx.fillText(rowLabel, gridX - 8, gridY + i*cellSize + cellSize/2 + 4);
+    ctx.textAlign='center';
+  }
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  const rr = Math.min(r, w/2, h/2);
+  ctx.moveTo(x+rr,y); ctx.arcTo(x+w,y,x+w,y+h,rr); ctx.arcTo(x+w,y+h,x,y+h,rr); ctx.arcTo(x,y+h,x,y,rr); ctx.arcTo(x,y,x+w,y,rr);
+}
+
+// ==== HIT / TOGGLE ====
+cv.onclick = e => {
+  if (!segmented) return;
+  const rect = cv.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const w = rect.width, h = rect.height;
+  const gridPadding = 60; const availW = w - gridPadding*2; const availH = h - 180;
+  const gridDisplaySize = Math.min(availW, availH);
+  const gridX = (w - gridDisplaySize)/2; const gridY = gridPadding + 20;
+  if (x < gridX || x > gridX + gridDisplaySize || y < gridY || y > gridY + gridDisplaySize) return;
+  const cellSize = gridDisplaySize / gridSize;
+  const col = Math.floor((x - gridX) / cellSize); const row = Math.floor((y - gridY) / cellSize);
+  const idx = row*gridSize + col; if (idx<0 || idx>=cells.length) return;
+  const c = cells[idx]; c.active = !c.active;
+  const cubeSize = (mode==='grid'?27:81); const z = c.metrics.lumaMean * cubeSize;
+  const freq = 200 + z * 10; const pan = (col / gridSize - 0.5) * 2; playNote(freq, pan);
+  // info panel
+  showInfo(c);
+  draw();
+};
+
+function showInfo(c){
+  const el = document.getElementById('info-content');
+  infoPanel.classList.add('show');
+  el.innerHTML = `
+    <div class="info-row"><span>Group</span><span>${c.group} (r${c.groupRow+1},c${c.groupCol+1})</span></div>
+    <div class="info-row"><span>Global</span><span>R${c.row+1} C${c.col+1}</span></div>
+    <div class="info-row"><span>Local</span><span>${c.localRow}${c.localCol}</span></div>
+    <div class="info-row"><span>ID</span><span>${c.id}</span></div>
+    <div class="info-row"><span>Luma</span><span>${c.metrics.lumaMean.toFixed(3)}</span></div>
+    <div class="info-row"><span>Active</span><span>${c.active? 'yes':'no'}</span></div>
+  `;
+}
+
+// ==== SEQUENCER ====
+ document.getElementById('btn-play').onclick = () => {
+  transport = !transport;
+  document.getElementById('btn-play').textContent = transport ? '■ STOP' : '▶ PLAY';
+  document.getElementById('seq-indicator').classList.toggle('show', transport);
+  if (transport){ seqStep = 0; lastStepTime = performance.now(); tick(); }
+ };
+
+function tick(){
+  if (!transport) return;
+  const now = performance.now();
+  const stepDuration = (60/tempo) * 1000 / 4; // 16th
+  if (now - lastStepTime >= stepDuration){
+    lastStepTime = now;
+    const cps = Math.ceil(cells.length/16), sStart = seqStep*cps, sEnd = Math.min(sStart+cps, cells.length);
+    for (let i=sStart;i<sEnd;i++) if (cells[i].active){
+      const c = cells[i];
+      const cubeSize = (mode==='grid'?27:81); const z = c.metrics.lumaMean * cubeSize;
+      const freq = 200 + z*10; const pan = (c.col / gridSize - 0.5) * 2; playNote(freq, pan);
+    }
+    seqStep = (seqStep + 1) % 16; document.getElementById('step-num').textContent = seqStep+1; draw();
+  }
+  requestAnimationFrame(tick);
+}
+
+// ==== EXPORT GROUP IMAGES (with bold group labels + inner 9×9 gridlines) ====
+ document.getElementById('btn-export').onclick = () => {
+  if (!segmented) return;
+  const groupSide = gridSize/3; // cells per group (3 for 9×9, 9 for 27×27)
+  const cellPx = cells[0].canvas.width; // original pixel cell size
+  const groupPx = cellPx * groupSide;
+  for (let gr=0; gr<3; gr++){
+    for (let gc=0; gc<3; gc++){
+      const groupCanvas = document.createElement('canvas');
+      const margin = 32; // for label + border
+      groupCanvas.width = groupPx + margin*2;
+      groupCanvas.height = groupPx + margin*2;
+      const gctx = groupCanvas.getContext('2d');
+      // bg
+      gctx.fillStyle = '#000'; gctx.fillRect(0,0,groupCanvas.width, groupCanvas.height);
+      // draw tiles
+      for (let r=0;r<groupSide;r++){
+        for (let c=0;c<groupSide;c++){
+          const srcR = gr*groupSide + r; const srcC = gc*groupSide + c; const idx = srcR*gridSize + srcC;
+          gctx.drawImage(cells[idx].canvas, margin + c*cellPx, margin + r*cellPx);
+        }
+      }
+      // inner fine grid
+      gctx.strokeStyle='rgba(0,229,160,.35)'; gctx.lineWidth=1;
+      for (let i=0;i<=groupSide;i++){
+        // vertical
+        gctx.beginPath(); gctx.moveTo(margin + i*cellPx, margin); gctx.lineTo(margin + i*cellPx, margin + groupPx); gctx.stroke();
+        // horizontal
+        gctx.beginPath(); gctx.moveTo(margin, margin + i*cellPx); gctx.lineTo(margin + groupPx, margin + i*cellPx); gctx.stroke();
+      }
+      // border
+      gctx.strokeStyle='rgba(0,229,160,.8)'; gctx.lineWidth=2; gctx.strokeRect(margin, margin, groupPx, groupPx);
+      // label
+      const label = `G${String.fromCharCode(65+gr)}${gc+1}`;
+      gctx.font='bold 22px monospace';
+      gctx.strokeStyle='#000'; gctx.lineWidth=4; gctx.strokeText(label, margin+8, margin-8);
+      gctx.fillStyle='#00ff99'; gctx.fillText(label, margin+8, margin-8);
+      // save
+      const a = document.createElement('a');
+      a.download = `mansion-${mode}-group-${label}.png`;
+      a.href = groupCanvas.toDataURL(); a.click();
+    }
+  }
+ };
+
+// ==== EXPORT MANIFEST (JSON + CSV) ====
+ document.getElementById('btn-manifest').onclick = () => {
+  if (!segmented) return;
+  // JSON
+  const jsonStr = JSON.stringify({ gridSize, mode, legend: {
+    group:"G[A–C][1–3]", global:"R# C# (or A1..I9)", local:"a..i × 1..9"
+  }, cells: manifest }, null, 2);
+  downloadBlob(jsonStr, `mansion-${mode}-manifest.json`, 'application/json');
+  // CSV
+  const header = ['group','groupRow','groupCol','globalRow','globalCol','localRow','localCol','id','lumaMean'];
+  const rows = manifest.map(m => header.map(k => m[k]));
+  const csv = [header.join(','), ...rows.map(r => r.join(','))].join('\n');
+  downloadBlob(csv, `mansion-${mode}-manifest.csv`, 'text/csv');
+ };
+
+function downloadBlob(text, filename, type){
+  const blob = new Blob([text], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ==== RESET ====
+ document.getElementById('btn-reset').onclick = () => {
+  hasImage = false; segmented = false; cells = []; transport = false; sourceImage = null; manifest = [];
+  document.getElementById('btn-segment').disabled = true;
+  document.getElementById('btn-play').disabled = true;
+  document.getElementById('btn-export').disabled = true;
+  document.getElementById('btn-manifest').disabled = true;
+  document.getElementById('seq-indicator').classList.remove('show');
+  infoPanel.classList.remove('show'); legendEl.classList.remove('show');
+  draw();
+ };
+
+// ==== INIT ====
+ window.onresize = () => { resize(); draw(); };
+ resize(); draw();
+</script>
+</body>
+</html>
